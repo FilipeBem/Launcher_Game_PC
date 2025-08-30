@@ -5,21 +5,26 @@ import requests
 import base64
 import random
 import pygame
-from PyQt5.QtCore import Qt, QSize, QTimer
+from PyQt5.QtCore import Qt, QSize, QTimer, QEvent  # <--- adicionar QEvent
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout,
-    QFileDialog, QListWidget, QListWidgetItem, QMessageBox, QInputDialog, QComboBox
+    QFileDialog, QListWidget, QListWidgetItem, QMessageBox, QInputDialog
 )
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush
 
 SAVE_FILE = "jogos.json"
 CAPA_DIR = "capas"
-BACKGROUND_DEFAULT = "background.jpg"
-BACKGROUND_LUA = "lua.jpg"
-BACKGROUND_PASTO = "pasto.jpg"
 
 if not os.path.exists(CAPA_DIR):
     os.makedirs(CAPA_DIR)
+
+# Função para pegar recursos no PyInstaller
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class Launcher(QWidget):
     def __init__(self):
@@ -40,7 +45,7 @@ class Launcher(QWidget):
 
         # Steam
         self.steam_btn = QPushButton()
-        self.steam_btn.setIcon(QIcon("icons/steam.png"))
+        self.steam_btn.setIcon(QIcon(resource_path("icons/steam.png")))
         self.steam_btn.setIconSize(QSize(127, 127))
         self.steam_btn.setFixedSize(100, 100)
         self.steam_btn.clicked.connect(lambda: self.abrir_programa("C:/Program Files (x86)/Steam/steam.exe"))
@@ -49,7 +54,7 @@ class Launcher(QWidget):
 
         # Epic
         self.epic_btn = QPushButton()
-        self.epic_btn.setIcon(QIcon("icons/epic.png"))
+        self.epic_btn.setIcon(QIcon(resource_path("icons/epic.png")))
         self.epic_btn.setIconSize(QSize(95, 95))
         self.epic_btn.setFixedSize(100, 100)
         self.epic_btn.clicked.connect(lambda: self.abrir_programa("C:/Program Files (x86)/Epic Games/Launcher/Portal/Binaries/Win32/EpicGamesLauncher.exe"))
@@ -68,11 +73,11 @@ class Launcher(QWidget):
         sidebar.addWidget(self.remove_game_btn)
         self.sidebar_buttons.append(self.remove_game_btn)
 
-        # Temas
-        self.temas_btn = QPushButton("Temas")
-        self.temas_btn.clicked.connect(self.abrir_temas)
-        sidebar.addWidget(self.temas_btn)
-        self.sidebar_buttons.append(self.temas_btn)
+        # Botão de temas
+        self.tema_btn = QPushButton("Tema")
+        self.tema_btn.clicked.connect(self.alterar_tema)
+        sidebar.addWidget(self.tema_btn)
+        self.sidebar_buttons.append(self.tema_btn)
 
         main_layout.addLayout(sidebar)
 
@@ -117,8 +122,8 @@ class Launcher(QWidget):
         self.atualizar_lista()
 
         # ===== Estilo dos botões =====
-        self.tema_atual = "azul"
-        self.estilizar_botoes()
+        self.tema_atual = "azul"  # padrão
+        self.aplicar_tema()
 
         # ===== Background =====
         self.set_background_image()
@@ -138,75 +143,36 @@ class Launcher(QWidget):
         # ===== Trilha sonora =====
         pygame.mixer.init()
         self.musicas = [
-            os.path.join("musicas", "Maroon 5 - Lucky Strike Lyrics Video (Overexposed).mp3"),
-            os.path.join("musicas", "shell_shocked_assassin_s_creed_gmv_aac_78023.mp3"),
-            os.path.join("musicas", "tubidy_aac_80693.mp3")
+            resource_path(os.path.join("musicas", "Maroon 5 - Lucky Strike Lyrics Video (Overexposed).mp3")),
+            resource_path(os.path.join("musicas", "shell_shocked_assassin_s_creed_gmv_aac_78023.mp3")),
+            resource_path(os.path.join("musicas", "tubidy_aac_80693.mp3"))
         ]
-        self.trilha_sonora()
+        pygame.mixer.music.set_volume(0.1)  # volume inicial 10%
         self.timer_trilha = QTimer()
         self.timer_trilha.timeout.connect(self.verificar_musica)
         self.timer_trilha.start(100)
-        pygame.mixer.music.set_volume(0.1)  # volume inicial
 
-    # ===== Função de temas =====
-    def abrir_temas(self):
-        tema, ok = QInputDialog.getItem(self, "Escolher Tema", "Selecione o tema:", ["Azul", "Lua", "Pasto"], 0, False)
-        if ok:
-            self.tema_atual = tema.lower()
-            self.estilizar_botoes()
-            self.set_background_image()
-
-    def estilizar_botoes(self):
-        if self.tema_atual == "azul":
-            cor_bg = "rgba(0, 50, 150, 0.4)"
-            cor_hover = "rgba(0, 150, 255, 0.5)"
-        elif self.tema_atual == "lua":
-            cor_bg = "rgba(30, 30, 30, 0.7)"
-            cor_hover = "rgba(80, 80, 80, 0.8)"
-        elif self.tema_atual == "pasto":
-            cor_bg = "rgba(50, 100, 50, 0.5)"
-            cor_hover = "rgba(100, 200, 100, 0.7)"
-        else:
-            cor_bg = "rgba(0, 50, 150, 0.4)"
-            cor_hover = "rgba(0, 150, 255, 0.5)"
-
-        botao_style = f"""
-        QPushButton {{
-            background-color: {cor_bg};
-            color: white;
-            border-radius: 10px;
-            font-size: 16px;
-            padding: 8px;
-        }}
-        QPushButton:hover {{
-            background-color: {cor_hover};
-            color: yellow;
-        }}
-        """
-        for btn in self.sidebar_buttons + [self.play_button, self.capa_button]:
-            btn.setStyleSheet(botao_style)
-
+    # ===== Background =====
     def set_background_image(self):
         if self.tema_atual == "azul":
-            img = BACKGROUND_DEFAULT
+            bg_file = resource_path("background.jpg")
         elif self.tema_atual == "lua":
-            img = BACKGROUND_LUA
-        elif self.tema_atual == "pasto":
-            img = BACKGROUND_PASTO
+            bg_file = resource_path("lua.jpg")
         else:
-            img = BACKGROUND_DEFAULT
+            bg_file = resource_path("pasto.jpg")
 
-        if os.path.exists(img):
+        if os.path.exists(bg_file):
             palette = QPalette()
-            bg = QPixmap(img).scaled(self.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+            bg = QPixmap(bg_file).scaled(self.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
             palette.setBrush(QPalette.Window, QBrush(bg))
             self.setPalette(palette)
             self.setAutoFillBackground(True)
 
-    # ===== Outras funções do launcher =====
+    # ===== Programas =====
     def abrir_programa(self, caminho):
         os.system(f'start "" "{caminho}"')
 
+    # ===== Jogos =====
     def carregar_jogos(self):
         if os.path.exists(SAVE_FILE):
             with open(SAVE_FILE, "r") as f:
@@ -373,29 +339,85 @@ class Launcher(QWidget):
             self.abrir_programa("C:/Program Files (x86)/Steam/steam.exe")
         elif self.sidebar_index == 1:
             self.abrir_programa("C:/Program Files (x86)/Epic Games/Launcher/Portal/Binaries/Win32/EpicGamesLauncher.exe")
-        elif self.sidebar_index == 2:
+        else:
             self.jogar()
-        else:  # Temas
-            self.abrir_temas()
 
     # ===== Trilha sonora =====
     def trilha_sonora(self):
         if not self.musicas:
             return
-        musica = random.choice(self.musicas)
-        pygame.mixer.music.load(musica)
-        pygame.mixer.music.play()
-        pygame.mixer.music.set_endevent(pygame.USEREVENT)
+        if not pygame.mixer.music.get_busy():  # só toca se não tiver música tocando
+            musica = random.choice(self.musicas)
+            pygame.mixer.music.load(musica)
+            pygame.mixer.music.play()
 
     def verificar_musica(self):
+        if not self.isVisible():  # se a janela não estiver visível, não faz nada
+            return
         for event in pygame.event.get():
             if event.type == pygame.USEREVENT:
                 self.trilha_sonora()
+
+    # ===== Tema =====
+    def alterar_tema(self):
+        opcoes = ["azul", "lua", "pasto"]
+        escolha, ok = QInputDialog.getItem(self, "Escolher Tema", "Tema:", opcoes, editable=False)
+        if ok:
+            self.tema_atual = escolha
+            self.aplicar_tema()
+
+    def aplicar_tema(self):
+        if self.tema_atual == "azul":
+            cor_btn = "rgba(0, 50, 150, 0.4)"
+            cor_hover = "rgba(0, 150, 255, 0.5)"
+        elif self.tema_atual == "lua":
+            cor_btn = "rgba(30, 30, 30, 0.8)"
+            cor_hover = "rgba(80, 80, 80, 0.8)"
+        else:  # pasto
+            cor_btn = "rgba(50, 100, 50, 0.5)"
+            cor_hover = "rgba(100, 200, 100, 0.5)"
+
+        botao_style = f"""
+        QPushButton {{
+            background-color: {cor_btn};
+            color: white;
+            border-radius: 10px;
+            font-size: 16px;
+            padding: 8px;
+        }}
+        QPushButton:hover {{
+            background-color: {cor_hover};
+            color: yellow;
+        }}
+        """
+        for btn in self.sidebar_buttons + [self.play_button, self.capa_button]:
+            btn.setStyleSheet(botao_style)
+
+        self.set_background_image()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.redimensionar_capa()
         self.set_background_image()
+
+    # ===== Controle de música por visibilidade =====
+    def changeEvent(self, event):
+        if event.type() == QEvent.WindowStateChange:  # <--- usar QEvent.WindowStateChange
+            if self.windowState() & Qt.WindowMinimized:
+                pygame.mixer.music.pause()
+            else:
+                pygame.mixer.music.unpause()
+        super().changeEvent(event)
+
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not pygame.mixer.music.get_busy():
+            self.trilha_sonora()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        pygame.mixer.music.stop()
 
 
 if __name__ == "__main__":
